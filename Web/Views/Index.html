@@ -1,0 +1,236 @@
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>Call Stats</title>
+  <link href="/Content/epoch.min.css" rel="stylesheet" />
+  <script src="/Scripts/jquery-1.10.2.min.js"></script>
+  <script src="/Scripts/jquery.signalR-2.0.2.min.js"></script>
+  <script src="http://localhost:8080/signalr/hubs"></script>
+  <script src="/Scripts/d3.min.js"></script>
+  <script src="/Scripts/epoch.min.js"></script>
+  <script type="text/javascript">
+
+    /*
+ * Real-time data generators for the example graphs in the documentation section.
+ */
+    (function () {
+
+      /*
+       * Class for generating real-time data for the area, line, and bar plots.
+       */
+      var RealTimeData = function (layers) {
+        this.layers = layers;
+        this.timestamp = ((new Date()).getTime() / 1000) | 0;
+      };
+
+      RealTimeData.prototype.rand = function () {
+        return parseInt(Math.random() * 100) + 50;
+      };
+
+      RealTimeData.prototype.history = function (entries) {
+        if (typeof (entries) != 'number' || !entries) {
+          entries = 60;
+        }
+
+        var history = [];
+        for (var k = 0; k < this.layers; k++) {
+          history.push({ values: [] });
+        }
+
+        for (var i = 0; i < entries; i++) {
+          for (var j = 0; j < this.layers; j++) {
+            history[j].values.push({ time: this.timestamp, y: this.rand() });
+          }
+          this.timestamp++;
+        }
+
+        return history;
+      };
+
+      RealTimeData.prototype.next = function () {
+        var entry = [];
+        for (var i = 0; i < this.layers; i++) {
+          entry.push({ time: this.timestamp, y: this.rand() });
+        }
+        this.timestamp++;
+        return entry;
+      }
+
+      window.RealTimeData = RealTimeData;
+
+
+      /*
+       * Gauge Data Generator.
+       */
+      var GaugeData = function () { };
+
+      GaugeData.prototype.next = function () {
+        return Math.random();
+      };
+
+      window.GaugeData = GaugeData;
+
+
+
+      /*
+       * Heatmap Data Generator.
+       */
+
+      var HeatmapData = function (layers) {
+        this.layers = layers;
+        this.timestamp = ((new Date()).getTime() / 1000) | 0;
+      };
+
+      window.normal = function () {
+        var U = Math.random(),
+            V = Math.random();
+        return Math.sqrt(-2 * Math.log(U)) * Math.cos(2 * Math.PI * V);
+      };
+
+      HeatmapData.prototype.rand = function () {
+        var histogram = {};
+
+        for (var i = 0; i < 1000; i++) {
+          var r = parseInt(normal() * 12.5 + 50);
+          if (!histogram[r]) {
+            histogram[r] = 1;
+          }
+          else {
+            histogram[r]++;
+          }
+        }
+
+        return histogram;
+      };
+
+      HeatmapData.prototype.history = function (entries) {
+        if (typeof (entries) != 'number' || !entries) {
+          entries = 60;
+        }
+
+        var history = [];
+        for (var k = 0; k < this.layers; k++) {
+          history.push({ values: [] });
+        }
+
+        for (var i = 0; i < entries; i++) {
+          for (var j = 0; j < this.layers; j++) {
+            history[j].values.push({ time: this.timestamp, histogram: this.rand() });
+          }
+          this.timestamp++;
+        }
+
+        return history;
+      };
+
+      HeatmapData.prototype.next = function () {
+        var entry = [];
+        for (var i = 0; i < this.layers; i++) {
+          entry.push({ time: this.timestamp, histogram: this.rand() });
+        }
+        this.timestamp++;
+        return entry;
+      }
+
+      window.HeatmapData = HeatmapData;
+
+
+    })();
+
+
+  </script>
+</head>
+<body>
+
+  <div id="real-time-line" class="epoch" style="height: 200px"></div>
+  <div id="gaugeChart1" class="epoch gauge-small"></div>
+  <div id="gaugeChart2" class="epoch gauge-small"></div>
+
+  <script type="text/javascript">
+    var gauge1 = $('#gaugeChart1').epoch({ type: 'time.gauge', value: 0 });
+    var gauge2 = $('#gaugeChart1').epoch({ type: 'time.gauge', value: 0 });
+
+    var rtData = new RealTimeData(2);
+
+    var now = new Date().getTime();
+
+    var initial = [
+      {
+        label: "Layer 1",
+        values: [
+          { time: now, y: 0 },
+          { time: now, y: 0 },
+          { time: now, y: 0 },
+          { time: now, y: 0 }
+        ]
+      }, {
+        label: "Layer 2",
+        values: [
+          { time: now, y: 0 },
+          { time: now, y: 0 },
+          { time: now, y: 0 },
+          { time: now, y: 0 }
+        ]
+      }, {
+        label: "Layer 3",
+        values: [
+          { time: now, y: 0 },
+          { time: now, y: 0 },
+          { time: now, y: 0 },
+          { time: now, y: 0 }
+        ]
+      }, {
+        label: "Layer 4",
+        values: [
+          { time: now, y: 0 },
+          { time: now, y: 0 },
+          { time: now, y: 0 },
+          { time: now, y: 0 }
+        ]
+      }
+    ];
+
+    var myChart = $('#real-time-line').epoch(
+      {
+        type: 'time.line',
+        data: initial,
+        axes: ['left', 'bottom', 'right']
+      });
+
+    $(function () {
+      $.connection.hub.url = "http://localhost:8080/signalr";
+
+      var callStatsHub = $.connection.callStatsHub;
+
+      callStatsHub.client.capacityUpdate = function (connectionId, currentUsage) {
+        console.info("ConnectionId [" + connectionId + "] " + currentUsage)
+
+        var id = connectionId[connectionId.length - 1];
+
+        if (id == 0) {
+          gauge1.update(currentUsage);
+        } else if (id == 1) {
+          gauge2.update(currentUsage);
+        };
+      };
+
+      callStatsHub.client.update = function (winTime, started, stopped, dropped, busy) {
+        console.info(winTime, started, stopped, dropped, busy);
+
+        var ticks = Date.parse(winTime);
+
+        var data = [
+          { time: ticks, y: started },
+          { time: ticks, y: stopped },
+          { time: ticks, y: dropped },
+          { time: ticks, y: busy }
+        ];
+
+        myChart.push(data);
+      }
+
+      $.connection.hub.start();
+    });
+  </script>
+</body>
+</html>
